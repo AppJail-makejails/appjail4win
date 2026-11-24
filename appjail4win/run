@@ -1,0 +1,289 @@
+#!/bin/sh
+
+set -o pipefail
+
+trap 'exit 1' INT
+
+. "${X11APPJAIL_WORKDIR}/appjail.d/lib.subr"
+
+null_file()
+{
+    cat << "EOF"
+kind: vmJail
+datacenters:
+  main:
+    entrypoint: !ENV 'http://127.0.0.1:${WINVM_OVERLORD_PORT}'
+    access_token: !ENV '${WINVM_ACCESS_TOKEN}'
+deployIn:
+  labels:
+    - !ENV '${WINVM_LABEL}'
+vmName: !ENV '${WINVM_NAME}'
+makejail: '/dev/null'
+overwrite: true
+EOF
+}
+
+pre_env()
+{
+    export WINVM_OVERLORD_PORT="${__winvm_overlord_port}"
+    export WINVM_ACCESS_TOKEN="${__winvm_access_token}"
+    export WINVM_LABEL="${__winvm_label}"
+    export WINVM_NAME="${__winvm_name}"
+}
+
+post_env()
+{
+    unset WINVM_OVERLORD_PORT
+    unset WINVM_ACCESS_TOKEN
+    unset WINVM_LABEL
+    unset WINVM_NAME
+}
+
+get_info()
+{
+    pre_env
+    null_file | overlord get-info -f /dev/stdin -t "$1" --filter-per-project
+    post_env
+}
+
+cancel()
+{
+    pre_env
+    null_file | overlord cancel -f /dev/stdin
+    post_env
+}
+
+get_vm_state()
+{
+    "${JEXEC}" -l "${__winvm_name}" vm info "${__winvm_name}" \
+        | sed -n 's/^[[:space:]]*state: //p'
+}
+
+JEXEC="${X11APPJAIL_BASEDIR}/usr/local/libexec/appjail/jexec/jexec"
+APPSPEC="${X11APPJAIL_APPNAME}:${X11APPJAIL_PROFILE}"
+
+__winvm_name="winvm-${X11APPJAIL_APPNAME}-${X11APPJAIL_UID}_${X11APPJAIL_PROFILE}"
+__winvm_access_token=`appjail secrets cat overlord/access_token` || exit 1
+__winvm_root_storage="30G"
+__winvm_private_storage="10G"
+__winvm_template="${X11APPJAIL_WORKDIR}/app.yml"
+__winvm_overlord_port="8888"
+__winvm_datastore="/var/cache/x11appjail/appjail4win/iso"
+__winvm_userdata="${X11APPJAIL_USERDIR}/data.img"
+__winvm_cpu="2"
+__winvm_mem="2G"
+__winvm_res="800x600"
+__winvm_macaddr="58:9c:fc:00:00:01"
+__winvm_autounattend=
+
+if ! x11appjail sys-attr check "overlord.label"; then
+    err "overlord.label: no matching label has been specified."
+    exit 1
+else
+    __winvm_label=`x11appjail sys-attr cat "overlord.label"` || exit 1
+fi
+
+if ! x11appjail sys-attr check "${APPSPEC}.isofile"; then
+    err "${APPSPEC}.isofile: no ISO file has been specified."
+    exit 1
+else
+    __winvm_isofile=`x11appjail sys-attr cat "${APPSPEC}.isofile"` || exit 1
+fi
+
+if x11appjail sys-attr check "${APPSPEC}.autounattend"; then
+    __winvm_autounattend=`x11appjail sys-attr cat "${APPSPEC}.autounattend"` || exit 1
+
+    if [ ! -f "${__winvm_autounattend}" ]; then
+        err "${APPSPEC}.autounattend: ${__winvm_autounattend}: not found or not a file."
+        exit 1
+    fi
+fi
+
+if x11appjail sys-attr check "overlord.port"; then
+    __winvm_overlord_port=`x11appjail sys-attr cat "overlord.port"` || exit 1
+fi
+
+if x11appjail sys-attr check "${APPSPEC}.root.storage"; then
+    __winvm_root_storage=`x11appjail sys-attr cat "${APPSPEC}.root.storage"` || exit 1
+fi
+
+if x11appjail sys-attr check "${APPSPEC}.private.storage"; then
+    __winvm_private_storage=`x11appjail sys-attr cat "${APPSPEC}.private.storage"` || exit 1
+fi
+
+if x11appjail sys-attr check "${APPSPEC}.cpu"; then
+    __winvm_cpu=`x11appjail sys-attr cat "${APPSPEC}.cpu"` || exit 1
+fi
+
+if x11appjail sys-attr check "${APPSPEC}.mem"; then
+    __winvm_mem=`x11appjail sys-attr cat "${APPSPEC}.mem"` || exit 1
+fi
+
+if x11appjail sys-attr check "${APPSPEC}.res"; then
+    __winvm_res=`x11appjail sys-attr cat "${APPSPEC}.res"` || exit 1
+fi
+
+if x11appjail sys-attr check "${APPSPEC}.macaddr"; then
+    __winvm_macaddr=`x11appjail sys-attr cat "${APPSPEC}.macaddr"` || exit 1
+fi
+
+if x11appjail sys-attr check "${APPSPEC}.template"; then
+    __winvm_template=`x11appjail sys-attr cat "${APPSPEC}.template"` || exit 1
+fi
+
+(
+    lockf 7 || exit 1
+
+    appjail status -q -- "${__winvm_name}" > /dev/null 2>&1
+
+    __winvm_status=$?
+
+    if [ ${__winvm_status} -gt 1 ] || "${JEXEC}" -l "${__winvm_name}" [ ! -f "/.appjail4win" ]; then
+        N=0
+
+        if [ ! -f "${__winvm_userdata}" ]; then
+            "${JEXEC}" -l -U noroot "${X11APPJAIL_JAIL}" \
+                truncate -s "${__winvm_private_storage}" -- "${__winvm_userdata}" || exit 1
+            "${JEXEC}" -l -U noroot "${X11APPJAIL_JAIL}" \
+                chmod 0600 "${__winvm_userdata}" || exit 1
+        fi
+
+        if [ -n "${__winvm_autounattend}" ] && [ -f "${__winvm_autounattend}" ]; then
+            __isopath="${__winvm_datastore}/${__winvm_isofile}"
+            __out="${__winvm_datastore}/${APPSPEC}.iso"
+
+            if [ ! -f "${__out}" ] || [ "${__winvm_autounattend}" -nt "${__out}" ]; then
+                __unpackdir="${__winvm_datastore}/${APPSPEC}"
+
+                "${JEXEC}" -l "${X11APPJAIL_JAIL}" \
+                    rm -rf -- "${__unpackdir}"
+
+                "${JEXEC}" -l "${X11APPJAIL_JAIL}" \
+                    7z x "${__isopath}" -o"${__unpackdir}" || exit 1
+
+                install -m 0700 -- "${__winvm_autounattend}" "${__unpackdir}/autounattend.xml" || exit 1
+
+                "${JEXEC}" -l "${X11APPJAIL_JAIL}" \
+                    mkisofs \
+                    -b boot/etfsboot.com \
+                    -no-emul-boot \
+                    -c BOOT.CAT \
+                    -iso-level 4 \
+                    -J -l -D -N \
+                    -joliet-long \
+                    -relaxed-filenames \
+                    -v \
+                    -V "Autowin" \
+                    -udf \
+                    -boot-info-table \
+                    -eltorito-alt-boot \
+                    -eltorito-platform 0xEF \
+                    -eltorito-boot efi/microsoft/boot/efisys_noprompt.bin \
+                    -no-emul-boot \
+                    -o "${__out}" "${__unpackdir}" || exit 1
+
+                "${JEXEC}" -l "${X11APPJAIL_JAIL}" \
+                    rm -rf -- "${__unpackdir}"
+            fi
+
+            __winvm_isofile="${APPSPEC}.iso"
+        fi
+
+        env WINVM_NAME="${__winvm_name}" \
+            WINVM_OVERLORD_PORT="${__winvm_overlord_port}" \
+            WINVM_ACCESS_TOKEN="${__winvm_access_token}" \
+            WINVM_LABEL="${__winvm_label}" \
+            WINVM_DATASTORE="${__winvm_datastore}" \
+            WINVM_CPU="${__winvm_cpu}" \
+            WINVM_MEM="${__winvm_mem}" \
+            WINVM_RES="${__winvm_res}" \
+            WINVM_MACADDR="${__winvm_macaddr}" \
+            WINVM_STORAGE="${__winvm_root_storage}" \
+            WINVM_ISOFILE="${__winvm_isofile}" \
+                overlord apply -f "${__winvm_template}" || exit 1
+
+        __winvm_network_ip4=
+
+        while :; do
+            sleep 1 || exit 1
+
+            __status_projects=
+            __status_vm=
+
+            for __kind in projects vm; do
+                if [ -n "${__status_projects}" ] && [ "${__kind}" = "projects" ]; then
+                    continue
+                fi
+                if [ -n "${__status_vm}" ] && [ "${__kind}" = "vm" ]; then
+                    continue
+                fi
+                
+                get_info "${__kind}" | grep -qEe 'operation: (INCOMPLETED|FAILED|NOOP)'
+
+                if [ $? -eq 0 ]; then
+                    cancel
+                    err "Unexpected status in '${__kind}':"
+                    get_info "${__kind}"
+                    exit 1
+                fi
+
+                if get_info "${__kind}" | grep -qEe 'operation: COMPLETED'; then
+                    setvar "__status_${__kind}" 1
+                fi
+            done
+
+            if [ -z "${__status_projects}" ] || [ -z "${__status_vm}" ]; then
+                continue
+            fi
+
+            appjail status -q -- "${__winvm_name}" > /dev/null 2>&1
+
+            if [ $? -ne 0 ]; then
+                continue
+            fi
+
+            __winvm_network_ip4=`appjail jail list -Hj "${__winvm_name}" network_ip4` || exit 1
+
+            if [ -z "${__winvm_network_ip4}" ]; then
+                continue
+            fi
+
+            __winvm_state=`get_vm_state`
+
+            if ! printf "%s" "${__winvm_state}" | grep -qiEe 'Running'; then
+                if [ ${N} -ge 3 ]; then
+                    err "Unexpected status in VM '${__winvm_name}':"
+                    
+                    "${JEXEC}" -l "${__winvm_name}" vm list >&2
+
+                    exit 1
+                fi
+
+                N=$((N+1))
+                continue
+            fi
+
+            "${JEXEC}" -l "${__winvm_name}" \
+                touch -- "/.appjail4win" > /dev/null 2>&1
+
+            break
+        done
+    fi
+
+    if [ ${__winvm_status} -eq 0 ]; then
+        __winvm_state=`get_vm_state`
+
+        if ! printf "%s" "${__winvm_state}" | grep -qiEe 'Running'; then
+            "${JEXEC}" -l "${__winvm_name}" vm start "${__winvm_name}" >&2
+        fi
+    fi
+) 7> "${X11APPJAIL_WORKDIR}/vmjail_lock" || exit 1
+exec 7>&-
+
+while :; do
+    __winvm_network_ip4=`appjail jail list -Hj "${__winvm_name}" network_ip4` || exit 1
+
+    "${JEXEC}" -l -U noroot -e "DISPLAY=${X11APPJAIL_DISPLAY}" "${X11APPJAIL_JAIL}" \
+        wait-for-it -t 0 -s "${__winvm_network_ip4}:5900" -- \
+        /vncviewer.sh "${__winvm_network_ip4}" || break
+done

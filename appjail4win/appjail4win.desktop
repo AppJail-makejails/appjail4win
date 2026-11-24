@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=appjail4win (AppJail:%%PROFILE%%)
+GenericName=Windows Virtual Machine
+Comment=Launch a full Windows VM
+Type=Application
+Exec=%%EXEC%%
+Icon=%%ICON%%
+Terminal=false
+Categories=System;Emulator;

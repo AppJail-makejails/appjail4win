@@ -1,0 +1,7 @@
+#!/bin/sh
+
+. "${X11APPJAIL_WORKDIR}/appjail.d/lib.subr"
+
+err "transfer: not implemented in this AppJail."
+
+exit 1

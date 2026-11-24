@@ -1,0 +1,24 @@
+#!/bin/sh
+
+__dbus_session_mode="none"
+__network_mode="inherit"
+__winvm_datastore="/var/cache/x11appjail/appjail4win/iso"
+
+. "${X11APPJAIL_WORKDIR}/appjail.d/init.subr"
+. "${X11APPJAIL_WORKDIR}/appjail.d/network.subr"
+. "${X11APPJAIL_WORKDIR}/appjail.d/ephemeral.subr"
+. "${X11APPJAIL_WORKDIR}/appjail.d/labels.subr"
+. "${X11APPJAIL_WORKDIR}/appjail.d/fonts.subr"
+. "${X11APPJAIL_WORKDIR}/appjail.d/datadir.subr"
+
+# Restricted file mode due to autounattend.xml.
+if [ ! -d "${__winvm_datastore}" ]; then
+    mkdir -p -m 0700 -- "${__winvm_datastore}"
+else
+    chmod -h 0700 "${__winvm_datastore}"
+fi
+set -- "$@" -o fstab="${__winvm_datastore} ${__winvm_datastore}"
+
+. "${X11APPJAIL_WORKDIR}/appjail.d/end.subr"
+. "${X11APPJAIL_WORKDIR}/appjail.d/oci.subr"
+. "${X11APPJAIL_WORKDIR}/appjail.d/create.subr"

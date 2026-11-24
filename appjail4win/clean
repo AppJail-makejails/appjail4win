@@ -1,0 +1,92 @@
+#!/bin/sh
+
+set -o pipefail
+
+trap 'exit 1' INT
+
+__winvm_name="winvm-${X11APPJAIL_APPNAME}-${X11APPJAIL_UID}_${X11APPJAIL_PROFILE}"
+
+destroy_vm()
+{
+    appjail status -q -- "${__winvm_name}" > /dev/null 2>&1
+
+    if [ $? -gt 1 ]; then
+        return 0
+    fi
+
+    local __winvm_access_token
+    __winvm_access_token=`appjail secrets cat overlord/access_token 2> /dev/null`
+
+    if [ -z "${__winvm_access_token}" ]; then
+        return 0
+    fi
+
+    if ! x11appjail sys-attr check "overlord.label"; then
+        return 0
+    fi
+
+    __winvm_label=`x11appjail sys-attr cat "overlord.label" 2> /dev/null`
+
+    if [ -z "${__winvm_label}" ]; then
+        return 0
+    fi
+
+    local __winvm_overlord_port="8888"
+
+    if x11appjail sys-attr check "overlord.port"; then
+        __winvm_fallback_overlord_port="${__overlord_port}"
+        __winvm_overlord_port=`x11appjail sys-attr cat "overlord.port" 2> /dev/null`
+
+        if ! printf "%s" "${__winvm_overlord_port}" | grep -qEe '^[0-9]$'; then
+            __winvm_overlord_port="${__winvm_fallback_overlord_port}"
+        fi
+
+        if [ ${__winvm_overlord_port} -lt 1 ] || [ ${__winvm_overlord_port} -gt 65535 ]; then
+            __winvm_overlord_port="${__winvm_fallback_overlord_port}"
+        fi
+    fi
+
+    export WINVM_OVERLORD_PORT="${__winvm_overlord_port}"
+    export WINVM_ACCESS_TOKEN="${__winvm_access_token}"
+    export WINVM_LABEL="${__winvm_label}"
+    export WINVM_NAME="${__winvm_name}"
+
+    cat << "EOF" | overlord destroy -Ff /dev/stdin
+kind: vmJail
+datacenters:
+  main:
+    entrypoint: !ENV 'http://127.0.0.1:${WINVM_OVERLORD_PORT}'
+    access_token: !ENV '${WINVM_ACCESS_TOKEN}'
+deployIn:
+  labels:
+    - !ENV '${WINVM_LABEL}'
+vmName: !ENV '${WINVM_NAME}'
+makejail: '/dev/null'
+overwrite: true
+EOF
+
+    unset WINVM_OVERLORD_PORT
+    unset WINVM_ACCESS_TOKEN
+    unset WINVM_LABEL
+    unset WINVM_NAME
+
+    __winvm_ip4_address=`appjail jail list -H -j "${__winvm_name}" network_ip4 2> /dev/null`
+
+    while :; do
+        sleep 1 || exit 1
+
+        if [ -n "${__winvm_ip4_address}" ] && nc -z -w 1 "${__winvm_ip4_address}" 5900 > /dev/null 2>&1; then
+            continue
+        fi
+
+        __winvm_ip4_address=
+
+        if appjail status -q -- "${__winvm_name}" > /dev/null 2>&1; then
+            continue
+        fi
+
+        break
+    done
+}
+
+destroy_vm

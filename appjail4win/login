@@ -1,0 +1,7 @@
+#!/bin/sh
+
+JEXEC="${X11APPJAIL_BASEDIR}/usr/local/libexec/appjail/jexec/jexec"
+
+__winvm_name="winvm-${X11APPJAIL_APPNAME}-${X11APPJAIL_UID}_${X11APPJAIL_PROFILE}"
+
+exec "${JEXEC}" -l "${__winvm_name}" vm-exec tsdiscon console

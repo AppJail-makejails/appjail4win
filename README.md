@@ -1,0 +1,619 @@
+# appjail4win
+
+
+
+github.com/AppJail-makejails/appjail4win
+
+## How to use this AppJail
+
+### General usage
+
+You can obtain the AppJail from the releases section of this repository. However, to go beyond a simple download and be able to update it conveniently from the console, the simplest complementary tool for our purposes is [sysutils/bin](https://freshports.org/sysutils/bin), a binary manager:
+
+```console
+$ doas pkg install -y bin
+```
+
+Install the latest version of this AppJail by running the following command:
+
+```console
+$ mkdir -p ~/bin
+$ bin install https://github.com/appjail-makejails/appjail4win
+```
+
+Or update it if it is already installed:
+
+```console
+$ bin update appjail4win.appjail
+```
+
+Assuming `~/bin` is in your `PATH`, you can run the AppJail simply by using the following command:
+
+```console
+$ appjail4win.appjail
+```
+
+Remember that when running an AppJail in portable mode, you must install the key used to verify the binary:
+
+```console
+$ cat << "EOF" | doas x11appjail trust dtxdf@disroot.org -
+untrusted comment: dtxdf@disroot.org (x11appjail) public key
+RWSZbdqRaZVSgICvhui+nrVbXbWw25jyZx/3lhaPzSmVi1Pgvk2DAB1h
+EOF
+$ x11appjail trusted
+KEY                                                                   COMMENT
+37e1a7da5478a29ec3d38ecb14919b107beab67cc0de0b473b5b018f018e1ccb.pub  dtxdf@disroot.org (x11appjail) public key
+```
+
+A system-wide installation requires only root access; the key is not necessary. However, it is strongly recommended to verify the binary before installation, making it necessary to install the key anyway.
+
+```console
+$ x11appjail verify ~/bin/appjail4win.appjail
+Signature Verified
+$ doas ~/bin/appjail4win.appjail --install
+$ x11appjail run appjail4win
+```
+
+An AppJail creates the jail only if it does not already exist or if the AppJail detects a valid change in its checksum (e.g.: after an update). This means that updates to the OCI image used by the AppJail are only checked at the creation time. If you need to update the OCI image, simply destroy the jail:
+
+```console
+$ x11appjail destroy-jail appjail4win
+```
+
+Once you run the AppJail again, the OCI image is pulled again only if it is newer than the one on your system.
+
+### D-Bus
+
+To achieve better integration with the desktop environment, the host's D-Bus is shared via `xdg-dbus-proxy(1)`. By default, the system bus is not shared and the session bus is filtered. This happens transparently and you don't need to do anything. However, you can modify the behavior by creating user attributes that affect how AppJail interprets them when starting the D-Bus proxy.
+
+```console
+$ x11appjail attr put appjail4win:default.dbus-user.talk.notifications "org.freedesktop.Notifications"
+```
+
+By defining this attribute, notifications will work as if they were running on your host. Note that this is just an example, and the application running within the jail may or may not use notifications.
+
+Both the session bus and the system bus can be completely disabled by simply setting `<appname>:<profile>.dbus-user` or `<appname>:<profile>.dbus-system` to `none`. The system bus is usually disabled by default, as in most cases only the session bus is needed.
+
+```console
+$ x11appjail attr put appjail4win:default.dbus-user none
+```
+
+Note that if you have already started the AppJail, in order for the changes to take effect, you must destroy the jail and then run the AppJail again.
+
+```console
+$ x11appjail destroy-jail appjail4win
+```
+### Prerequisites
+
+1. Install and configure [Overlord](https://github.com/DtxdF/overlord).
+
+   The easiest way to do this is to use [AppJail.setup](https://github.com/DtxdF/AppJail.setup) with the `--with-overlord` parameter. See also [Getting Started](https://appjail.readthedocs.io/en/latest/getting-started/) in the AppJail Handbook.
+
+2. Configure your Overlord instance with a label that uniquely identifies it across the entire cluster. For example, in my case:
+
+   **/usr/local/etc/overlord.yml** (**excerpt**):
+
+   ```yaml
+   labels:
+     - all
+     - desktop
+     - services
+     - vm-only
+     - dc-air
+   ```
+
+   `desktop` is that label.
+
+3. Download a Windows ISO and place it in `/var/cache/x11appjail/appjail4win/iso`. This AppJail will change the file mode to `0700` for this directory, since your `autounattend.xml` file may contain sensitive data.
+
+4. (optional) Create an `autounattend.xml` file. You can use [this](https://schneegans.de/windows/unattend-generator/) generator to do so.
+
+   The location could be `/var/cache/x11appjail/appjail4win/xml`, but this AppJail doesn't actually care about the path, so you can put it anywhere, as long as it's a secure location.
+
+### Recommendations
+
+#### Networking
+
+If you use [this](https://schneegans.de/windows/unattend-generator/) generator to create an `autounattend.xml` file, include at least the following in “XML markup for more components":
+
+1. ```xml
+   <Interfaces>
+     <Interface wcm:action="add">
+       <Ipv4Settings>
+         <DhcpEnabled>false</DhcpEnabled>
+         <Metric>10</Metric>
+         <RouterDiscoveryEnabled>false</RouterDiscoveryEnabled>
+       </Ipv4Settings>
+       <Identifier>Ethernet</Identifier>
+       <UnicastIpAddresses>
+         <IpAddress wcm:action="add" wcm:keyValue="1">192.168.8.2/24</IpAddress>
+       </UnicastIpAddresses>
+       <Routes>
+         <Route wcm:action="add">
+           <Identifier>0</Identifier>
+           <Metric>10</Metric>
+           <NextHopAddress>192.168.8.1</NextHopAddress>
+           <Prefix>0.0.0.0/0</Prefix>
+         </Route>
+       </Routes>
+     </Interface>
+   </Interfaces>
+   ```
+
+   to the "**Microsoft-Windows-TCPIP** — specialize" component.
+
+2. ```xml
+   <Interfaces>
+     <Interface wcm:action="add">
+       <DNSServerSearchOrder>
+         <IpAddress wcm:action="add" wcm:keyValue="1">172.16.0.1</IpAddress>
+       </DNSServerSearchOrder>
+       <Identifier>Ethernet</Identifier>
+     </Interface>
+   </Interfaces>
+   ```
+
+   to the "**Microsoft-Windows-DNS-Client** — specialize" component.
+
+Please note that this assumes you have followed the [Getting Started](https://appjail.readthedocs.io/en/latest/getting-started/) guide in the AppJail Handbook. Feel free to use whatever works best for your environment.
+
+#### Block outbound traffic from the host to jails for users with UID > 0
+
+VNC on bhyve does not use authentication. Although you can rely on Windows authentication (bad idea), it is advisable to further restrict unprivileged users at network-level so that they cannot connect to jails by default. This can be done with `--enable-pf-unprivileged-block` in `AppJail.setup`. It is assumed that [Security Group](https://github.com/DtxdF/AppJail/wiki/filter) hooks are installed, so we will use them throughout the rest of this document.
+
+#### Installed AppJail
+
+Although you can use this AppJail in portable mode, keep in mind that in this mode you can only use the `default` profile. We recommend installing this AppJail with different profiles, as described below:
+
+```console
+$ doas ./appjail4win.AppJail --install --set-option profile=win10
+$ doas ./appjail4win.AppJail --install --set-option profile=win11
+```
+
+### Creating Windows VM
+
+#### Configuring
+
+The system operator (that is, you, with root privileges) is responsible for configuring the AppJail before unprivileged users run it.
+
+At a minimum, you need the following system attributes:
+
+1. `overlord.label`: The label under which the VM will be deployed.
+2. `<appspec>.isofile`: Filename of the ISO file, which is supposed to be located in `/var/cache/x11appjail/appjail4win/iso`. 
+
+As an [AppJail secret](https://appjail.readthedocs.io/en/latest/secrets/), you must have an access token for your Overlord instance as `overlord/access_token`:
+
+```console
+$ OVERLORD_CONFIG=/usr/local/etc/overlord.yml overlord gen-token |\
+    appjail secrets create overlord/access_token
+```
+
+There are other system attributes that this AppJail supports, but only the ones listed above are required. An example from my system, including the optional ones:
+
+**General**:
+
+```console
+$ doas x11appjail sys-attr put overlord.label desktop
+```
+
+**Windows 10**:
+
+```console
+$ doas x11appjail sys-attr put appjail4win:win10.res 1280x720
+$ doas x11appjail sys-attr put appjail4win:win10.cpu 4
+$ doas x11appjail sys-attr put appjail4win:win10.mem 4G
+$ doas x11appjail sys-attr put appjail4win:win10.isofile es-es_windows_10_enterprise_ltsc_2021_x64_dvd_51d721ea.iso
+$ doas x11appjail sys-attr put appjail4win:win10.template /var/cache/x11appjail/appjail4win/templates/win10.yml
+$ doas x11appjail sys-attr put appjail4win:win10.autounattend /var/cache/x11appjail/appjail4win/xml/autounattend.xml
+$ doas ls -lh /var/cache/x11appjail/appjail4win/iso/es-es_windows_10_enterprise_ltsc_2021_x64_dvd_51d721ea.iso
+-rw-r--r--  1 root wheel  4,6G 31 oct.  18:53 /var/cache/x11appjail/appjail4win/iso/es-es_windows_10_enterprise_ltsc_2021_x64_dvd_51d721ea.iso
+```
+
+**Windows 11**:
+
+```console
+$ doas x11appjail sys-attr put appjail4win:win11.res 1280x720
+$ doas x11appjail sys-attr put appjail4win:win11.cpu 4
+$ doas x11appjail sys-attr put appjail4win:win11.mem 4G
+$ doas x11appjail sys-attr put appjail4win:win11.isofile en-us_windows_11_iot_enterprise_ltsc_2024_x64_dvd_f6b14814.iso
+$ doas x11appjail sys-attr put appjail4win:win11.template /var/cache/x11appjail/appjail4win/templates/win11.yml
+$ doas x11appjail sys-attr put appjail4win:win11.autounattend /var/cache/x11appjail/appjail4win/xml/autounattend.xml
+$ doas ls -lh /var/cache/x11appjail/appjail4win/iso/en-us_windows_11_iot_enterprise_ltsc_2024_x64_dvd_f6b14814.iso
+-rw-r--r--  1 root wheel  4,8G 22 nov.  14:09 /var/cache/x11appjail/appjail4win/iso/en-us_windows_11_iot_enterprise_ltsc_2024_x64_dvd_f6b14814.iso
+```
+
+---
+
+`<appspec>.template` is completely optional, and if none is specified, this AppJail will use the [built-in one](appjail4win/win10.yml). The problem is that, although the default template is generic enough, it may not work on your system. For example, it won't work on my system because I use [Security Groups](https://github.com/DtxdF/AppJail/wiki/filter) and need to explicitly allow DNS, at a minimum. Additionally, in certain cases, you may want to enable other features, such as sound, TPM, etc., which requires allowing specific devices within the jail. You'll find more details in the “[Customization](#customization)” section.
+
+#### Profit!
+
+Once the system operator has configured the AppJails, an unprivileged user can now run the installed AppJails.
+
+```console
+$ x11appjail list | grep appjail4win
+appjail4win       win10    6.1M
+appjail4win       win11    6.1M
+$ x11appjail run appjail4win:win10
+```
+
+![](assets/img/win10.png)
+
+This AppJail creates two disks for different purposes: a primary (or root) disk and a secondary (or private) disk. The first is intended for the operating system and is ephemeral, while the second is for you, to store user data that will remain even after the vmjail is recreated. Note that the secondary disk is only created if it does not already exist, but it is not formatted. It is recommended that you format it using Windows itself. The secondary disk is stored as `/var/x11appjail/users/<uid>/<appspec>/data.img`.
+
+```console
+$ ls -lh /var/x11appjail/users/15000/appjail4win.win10/data.img
+-rw-------  1 user user   10G 23 nov.  16:02 /var/x11appjail/users/15000/appjail4win.win10/data.img
+```
+
+![](assets/img/win10-diskmgmt.png)
+![](assets/img/win10-diskmgmt-002.png)
+![](assets/img/win10-diskmgmt-003.png)
+![](assets/img/win10-diskmgmt-004.png)
+![](assets/img/win10-diskmgmt-005.png)
+![](assets/img/win10-diskmgmt-006.png)
+![](assets/img/win10-diskmgmt-007.png)
+![](assets/img/win10-diskmgmt-008.png)
+![](assets/img/win10-disks.png)
+
+If you have used an `autounattend.xml` file, this AppJail will create a new ISO file that includes it. That ISO file is the one that will be used in this case.
+
+```console
+$ ls -ld /var/cache/x11appjail/appjail4win/iso
+drwx------  2 root wheel 7 23 nov.  15:42 /var/cache/x11appjail/appjail4win/iso
+$ doas ls -lh /var/cache/x11appjail/appjail4win/iso/appjail4win:win10.iso
+-rw-r--r--  1 root wheel  4,6G 23 nov.  15:42 /var/cache/x11appjail/appjail4win/iso/appjail4win:win10.iso
+```
+
+This AppJail will recreate the ISO file only if the `autounattend.xml` file is newer than the ISO file. The ISO file will not be recreated if you have modified `<appspec>.isofile` or if that file has been modified. You can `touch(1)` your `autounattend.xml` or remove the ISO file, but the first option is recommended, as it will not affect any ongoing operations.
+
+Once AppJail detects that the VM is ready to accept connections and no errors have been detected, `vncviewer` is used to connect to the VNC session created by `bhyve(8)`. This happens inside the jail, but you can easily connect from the host using `vncviewer` or any other VNC client you have.
+
+```console
+$ nc -z -v winvm-appjail4win-15000_win10 5900
+Connection to winvm-appjail4win-15000_win10 5900 port [tcp/vnc-server] succeeded!
+$ vncviewer -FullScreen=0 winvm-appjail4win-15000_win10
+```
+
+If you run this AppJail again after everything has gone smoothly, this AppJail will simply reconnect (and possibly start the VM, if the guest OS has shut down).
+
+```console
+$ x11appjail run appjail4win:win10
+...
+Starting winvm-appjail4win-15000_win10
+  * found guest in /vm/winvm-appjail4win-15000_win10
+  * booting...
+...
+[*] Waiting for 10.0.0.5:5900 without a timeout
+[+] 10.0.0.5:5900 is available after 1 seconds
+...
+TigerVNC v1.16.2
+Built on: 2026-11-15 15:06
+Copyright (C) 1999-2026 TigerVNC team and many others (see README.rst)
+See https://www.tigervnc.org for information on TigerVNC.
+
+Mon Nov 23 18:36:15 2026
+ DecodeManager: Detected 4 CPU core(s)
+ DecodeManager: Creating 4 decoder thread(s)
+ CConn:       Connected to host 10.0.0.5 port 5900
+ CConnection: Server supports RFB protocol version 3.8
+ CConnection: Using RFB protocol version 3.8
+ CConnection: Choosing security type None(1)
+ DesktopWindow: Reducing window size to fit on current monitor
+
+Mon Nov 23 18:36:16 2026
+ CConn:       Throughput 20000 kbit/s - full color is now enabled
+ CConn:       Using pixel format depth 24 (32bpp) little-endian rgb888
+ CConn:       Throughput 19999 kbit/s - changing to quality 8
+...
+```
+
+From the user's perspective, there is no difference between running Windows 10 and Windows 11, except for the profile:
+
+```console
+$ x11appjail run appjail4win:win11
+```
+
+![](assets/img/win11.png)
+![](assets/img/win11-002.png)
+![](assets/img/win11-003.png)
+
+#### Customization
+
+You may need to customize the settings if the default values do not suit your environment. For example, these are the Overlord deployment files I used to install Windows 10 and Windows 11:
+
+```console
+$ doas x11appjail sys-attr cat appjail4win:win10.template
+/var/cache/x11appjail/appjail4win/templates/win10.yml
+$ cat /var/cache/x11appjail/appjail4win/templates/win10.yml
+kind: vmJail
+datacenters:
+  main:
+    entrypoint: !ENV 'http://127.0.0.1:${WINVM_OVERLORD_PORT}'
+    access_token: !ENV '${WINVM_ACCESS_TOKEN}'
+deployIn:
+  labels:
+    - !ENV '${WINVM_LABEL}'
+vmName: !ENV '${WINVM_NAME}'
+makejail: 'gh+AppJail-makejails/vm'
+overwrite: true
+options:
+  - fstab: !ENV '${WINVM_DATASTORE} /vm/.iso nullfs ro'
+  - fstab: !ENV '${X11APPJAIL_USERDIR} /media'
+  - device: 'path dsp unhide'
+  - device: 'path "dsp*" unhide'
+  - label: 'security-group:1'
+  - label: 'security-group.tables.allow-dns:allow-dns'
+  - label: !ENV 'security-group.rules.allow-vnc:pass out on appjail_bridge proto tcp to %i port 5900 user ${X11APPJAIL_UID}'
+build-arguments:
+  - is_public_vm: '1'
+  - exclude_ports: '5900'
+template:
+  loader: 'uefi'
+  cpu: !ENV '${WINVM_CPU}'
+  memory: !ENV '${WINVM_MEM}'
+  sound: 'yes'
+  graphics: 'yes'
+  graphics_listen: '0.0.0.0'
+  graphics_res: !ENV '${WINVM_RES}'
+  graphics_wait: 'no'
+  xhci_mouse: 'yes'
+  network0_type: 'virtio-net'
+  network0_switch: 'public'
+  network0_mac: !ENV '${WINVM_MACADDR}'
+  utctime: 'NO'
+  wired_memory: 'YES'
+  uefi_vars: 'YES'
+  debug: 'YES'
+  disk1_type: 'nvme'
+  disk1_dev: 'custom'
+  disk1_name: '/media/data.img'
+  disk2_type: 'ahci-cd'
+  disk2_dev: 'custom'
+  disk2_name: '/vm/.iso/virtio-win.iso'
+  virt_console0: 'org.qemu.guest_agent.0'
+diskLayout:
+  driver: 'nvme'
+  size: !ENV '${WINVM_STORAGE}'
+  from:
+    type: 'iso'
+    isoFile: !ENV '${WINVM_ISOFILE}'
+$ doas x11appjail sys-attr cat appjail4win:win11.template
+/var/cache/x11appjail/appjail4win/templates/win11.yml
+$ cat /var/cache/x11appjail/appjail4win/templates/win11.yml
+kind: vmJail
+datacenters:
+  main:
+    entrypoint: !ENV 'http://127.0.0.1:${WINVM_OVERLORD_PORT}'
+    access_token: !ENV '${WINVM_ACCESS_TOKEN}'
+deployIn:
+  labels:
+    - !ENV '${WINVM_LABEL}'
+vmName: !ENV '${WINVM_NAME}'
+makejail: 'gh+AppJail-makejails/vm'
+overwrite: true
+options:
+  - fstab: !ENV '${WINVM_DATASTORE} /vm/.iso nullfs ro'
+  - fstab: !ENV '${X11APPJAIL_USERDIR} /media'
+  - device: 'path dsp unhide'
+  - device: 'path "dsp*" unhide'
+  - device: 'path "tpm*" unhide'
+  - label: 'security-group:1'
+  - label: 'security-group.tables.allow-dns:allow-dns'
+  - label: !ENV 'security-group.rules.allow-vnc:pass out on appjail_bridge proto tcp to %i port 5900 user ${X11APPJAIL_UID}'
+build-arguments:
+  - is_public_vm: '1'
+  - exclude_ports: '5900'
+template:
+  loader: 'uefi'
+  cpu: !ENV '${WINVM_CPU}'
+  memory: !ENV '${WINVM_MEM}'
+  sound: 'yes'
+  graphics: 'yes'
+  graphics_listen: '0.0.0.0'
+  graphics_res: !ENV '${WINVM_RES}'
+  graphics_wait: 'no'
+  xhci_mouse: 'yes'
+  network0_type: 'virtio-net'
+  network0_switch: 'public'
+  network0_mac: !ENV '${WINVM_MACADDR}'
+  utctime: 'NO'
+  wired_memory: 'YES'
+  uefi_vars: 'YES'
+  debug: 'YES'
+  disk1_type: 'nvme'
+  disk1_dev: 'custom'
+  disk1_name: '/media/data.img'
+  disk2_type: 'ahci-cd'
+  disk2_dev: 'custom'
+  disk2_name: '/vm/.iso/virtio-win.iso'
+  virt_console0: 'org.qemu.guest_agent.0'
+  bhyve_options: '-l tpm,passthru,/dev/tpm0'
+diskLayout:
+  driver: 'nvme'
+  size: !ENV '${WINVM_STORAGE}'
+  from:
+    type: 'iso'
+    isoFile: !ENV '${WINVM_ISOFILE}'
+```
+
+There aren't many differences between `win10.yml` and `win11.yml`. What they have in common are the devices required for sound to work on the guest OS. In my case, I downloaded `virtio-win.iso`, which my `autounattend.xml` file can automatically detect and install. Other common parameters include labels related to Security Group rules, which in my case allow DNS and permit the unprivileged user to connect to the vmjail, assuming you used `--enable-pf-unprivileged-block` in `AppJail.setup`. For Windows 11, there are parameters related to the TPM, which is supposed to be exposed on your host as `/dev/tpm0`.
+
+#### Tor
+
+Since this AppJail is based on [gh+AppJail-makejails/vm](https://github.com/AppJail-makejails/vm), it is possible to deploy a VM in which all traffic is routed through Tor. However, a few minor changes are required. In your `autounattend.xml` file, you must change the DNS settings to point to `192.168.8.1` instead of `172.16.0.1` (or whatever nameserver you've been using). The rest of the system attributes are similar to those of, in this case, Windows 10, but you'll need to slightly modify the template.
+
+```console
+$ doas x11appjail sys-attr cat appjail4win:tor.autounattend
+/var/cache/x11appjail/appjail4win/xml/autounattend+tor.xml
+$ doas x11appjail sys-attr cat appjail4win:tor.res
+1280x720
+$ doas x11appjail sys-attr cat appjail4win:tor.cpu
+4
+$ doas x11appjail sys-attr cat appjail4win:tor.isofile
+es-es_windows_10_enterprise_ltsc_2021_x64_dvd_51d721ea.iso
+$ doas x11appjail sys-attr cat appjail4win:tor.mem
+4G
+$ doas x11appjail sys-attr cat appjail4win:tor.template
+/var/cache/x11appjail/appjail4win/templates/tor.yml
+$ cat /var/cache/x11appjail/appjail4win/templates/tor.yml
+kind: vmJail
+datacenters:
+  main:
+    entrypoint: !ENV 'http://127.0.0.1:${WINVM_OVERLORD_PORT}'
+    access_token: !ENV '${WINVM_ACCESS_TOKEN}'
+deployIn:
+  labels:
+    - !ENV '${WINVM_LABEL}'
+vmName: !ENV '${WINVM_NAME}'
+makejail: 'gh+AppJail-makejails/vm'
+overwrite: true
+options:
+  - fstab: !ENV '${WINVM_DATASTORE} /vm/.iso nullfs ro'
+  - fstab: !ENV '${X11APPJAIL_USERDIR} /media'
+  - label: 'security-group:1'
+  - label: 'security-group.tables.allow-dns:allow-dns'
+  - label: !ENV 'security-group.rules.allow-vnc:pass out on appjail_bridge proto tcp to %i port 5900 user ${X11APPJAIL_UID}'
+build-arguments:
+  - vm_tag: 'tor'
+template:
+  loader: 'uefi'
+  cpu: !ENV '${WINVM_CPU}'
+  memory: !ENV '${WINVM_MEM}'
+  graphics: 'yes'
+  graphics_listen: '0.0.0.0'
+  graphics_res: !ENV '${WINVM_RES}'
+  graphics_wait: 'no'
+  xhci_mouse: 'yes'
+  network0_type: 'virtio-net'
+  network0_switch: 'public'
+  network0_mac: !ENV '${WINVM_MACADDR}'
+  utctime: 'NO'
+  wired_memory: 'YES'
+  uefi_vars: 'YES'
+  debug: 'YES'
+  disk1_type: 'nvme'
+  disk1_dev: 'custom'
+  disk1_name: '/media/data.img'
+  disk2_type: 'ahci-cd'
+  disk2_dev: 'custom'
+  disk2_name: '/vm/.iso/virtio-win.iso'
+  virt_console0: 'org.qemu.guest_agent.0'
+diskLayout:
+  driver: 'nvme'
+  size: !ENV '${WINVM_STORAGE}'
+  from:
+    type: 'iso'
+    isoFile: !ENV '${WINVM_ISOFILE}'
+$ doas ./appjail4win.AppJail --install --set-option profile=tor
+$ x11appjail run appjail4win:tor
+```
+
+![](assets/img/tor.png)
+![](assets/img/tor-002.png)
+![](assets/img/tor-003.png)
+
+#### Commands and Login
+
+Attentive readers will have noticed that, in my templates, I have specified `org.qemu.guest_agent.0`, a socket for communicating with the QEMU guest agent, assuming it is installed on the guest OS. This AppJail installs hooks (a feature available in x11appjail v3.0.0 and later), so when you run `x11appjail run-cmd`, the commands are executed on the guest OS.
+
+```console
+$ x11appjail run-cmd appjail4win:tor whoami
+nt authority\system
+$ x11appjail run-cmd appjail4win:tor ipconfig
+
+Configuraci�n IP de Windows
+
+
+Adaptador de Ethernet Ethernet:
+
+   Sufijo DNS espec�fico para la conexi�n. . :
+   V�nculo: direcci�n IPv6 local. . . : fe80::6c72:ca4d:ac70:5e19%6
+   Direcci�n IPv4. . . . . . . . . . . . . . : 192.168.8.2
+   M�scara de subred . . . . . . . . . . . . : 255.255.255.0
+   Puerta de enlace predeterminada . . . . . : 192.168.8.1
+$ x11appjail run-cmd appjail4win:tor powershell.exe -Command "(Invoke-RestMethod -Uri 'http://ip-api.com/json').query"
+204.8.96.116
+```
+
+A similar hook is installed for `x11appjail login` with the sole purpose of locking the screen on the guest.
+
+```console
+$ x11appjail login appjail4win:tor
+```
+
+![](assets/img/lockscreen.png)
+
+#### Packages
+
+In the "Run custom scripts > `FirstLogon` Scripts” section of the generator mentioned above, you can enter the following script to install chococaley and any other packages you want on your VM:
+
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+choco install notepadplusplus -y --no-progress
+```
+
+This will install Notepad++, but you can install any other package you want.
+
+![](assets/img/choco.png)
+
+
+### Attributes
+#### User Attributes
+
+| Name | Description |
+| --- | --- |
+| `<appname>:<profile>.dbus-system` | Configure the system bus mode. There are three modes:<br><br>1. `filter`: Enables filtering.<br>2. `unfiltered`: Disables filtering. This mode is insecure and is recommended only for development.<br>3. `none`: Completely disables the session bus. This is the default mode unless explicitly stated otherwise.<br>|
+| `<appname>:<profile>.dbus-system.<policy>.*` | Apply a policy or rule to the system bus, where `<type>` can be `own`, `call`, `talk`, `see`, and `broadcast`. See `xdg-dbus-proxy(1)` for details.|
+| `<appname>:<profile>.dbus-user` | Configure the session bus mode. There are three modes:<br><br>1. `filter`: Enables filtering. This is the default mode unless explicitly stated otherwise.<br>2. `unfiltered`: Disables filtering. This mode is insecure and is recommended only for development.<br>3. `none`: Completely disables the session bus.<br>|
+| `<appname>:<profile>.dbus-user.<policy>.*` | Apply a policy or rule to the session bus, where `<type>` can be `own`, `call`, `talk`, `see`, and `broadcast`. See `xdg-dbus-proxy(1)` for details.|
+| `<appname>:<profile>.dpi` | Sets the resolution for all screens, in dots per inch. By default, no DPI is set.|
+| `<appname>:<profile>.env.<label>.*` | User-defined custom environment variables. `<label>` is an arbitrary name, as it is not part of the environment. The value of the attribute will be the environment variable with its value in the format `<name>=<value>`.|
+| `<appname>:<profile>.jail.ephemeral` | Mark the jail as ephemeral. See `ephemeral` option in `appjail-quick(1)` for details.<br><br>Although the jail may be destroyed, its data is preserved in the user directory (see `${X11APPJAIL_USERDIR}` in `x11appjail-spec(5)`).<br>|
+| `<appname>:<profile>.screen` | Screen size. If this is not set, allow the window to be resized.|
+
+#### System Attributes
+
+| Name | Description |
+| --- | --- |
+| `<appspec>.autounattend` | Path to the `autounattend.xml` file for installing Windows in unattended mode.|
+| `<appspec>.cpu` | Number of CPUs to be used for this virtual machine.|
+| `<appspec>.isofile` | ISO filename containing the Windows operating system.|
+| `<appname>:<profile>.labels` | A space-separated list of label names.|
+| `<appspec>.macaddr` | This option allows you to specify a mac address to use for this interface. Default is `58:9c:fc:00:00:01`.|
+| `<appspec>.mem` | The amount of memory to assign to the guest.|
+| `oci.from` | Location of OCI image.|
+| `oci.pull-policy` | Pull policy. Default is `newer`.<br><br>See `--pull` in `buildah-from(1)` for details.<br>|
+| `oci.tag` | OCI image tag.|
+| `overlord.label` | A label that matches the local instance of Overlord.|
+| `overlord.port` | The port on which the local Overlord instance is listening. Default is `8888`.|
+| `<appname>:<profile>.labels.<label>` | The value of the label.|
+| `<appname>:<profile>.oci.from` | Same as `oci.from`, but by application. It takes precedence when defined.|
+| `<appname>:<profile>.oci.pull-policy` | Same as `oci.pull-policy`, but by application. It takes precedence when defined.|
+| `<appname>:<profile>.oci.tag` | Same as `oci.tag`, but by application. It takes precedence when defined.|
+| `<appspec>.private.storage` | Storage size of the secondary disk. Default is `10G`.<br><br>Please note that if this disk file does not exist, it will be created, but this only happens once. This AppJail will not change the disk size, so you must use `truncate(1)` to do so at your own risk.<br>|
+| `<appspec>.res` | Specify the resolution of the graphical console in WxH format. Only a certain range of resolutions are currently supported (see `graphics_res` in [`config.sample`](https://github.com/freebsd/vm-bhyve/blob/master/sample-templates/config.sample)). Default is `1024x768`.|
+| `<appspec>.root.storage` | Storage size of the primary disk. Default is `30G`.|
+| `network.security-group.tables` | If `network.mode` is set to `virtualnet`, this attribute specifies a space-separated list of `pf(4)` tables to which the jail will be added using Security Group hooks.<br><br>If you are going to add additional labels related to Security Groups, do not include `security-group:1`, as this attribute already include it.<br><br>See also: https://github.com/DtxdF/AppJail/wiki/filter<br>|
+| `mount.system-fonts` | Read-only mounts the fonts system inside the jail, configure Fontconfig, and rebuild the font cache.|
+| `<appspec>.template` | Overlord deployment file.|
+
+## OCI Configuration
+
+```yaml
+build:
+  variants:
+    - tag: 15.1
+      containerfile: Containerfile
+      aliases: ["latest"]
+      default: true
+      args:
+        FREEBSD_RELEASE: "15.1"
+        NO_PKGCLEAN: "1"
+      cache_dirs: ["pkgcache0:/var/cache/pkg"]
+```

@@ -1,0 +1,46 @@
+kind: vmJail
+datacenters:
+  main:
+    entrypoint: !ENV 'http://127.0.0.1:${WINVM_OVERLORD_PORT}'
+    access_token: !ENV '${WINVM_ACCESS_TOKEN}'
+deployIn:
+  labels:
+    - !ENV '${WINVM_LABEL}'
+vmName: !ENV '${WINVM_NAME}'
+makejail: 'gh+AppJail-makejails/vm'
+options:
+  - fstab: !ENV '${WINVM_DATASTORE} /vm/.iso nullfs ro'
+  - fstab: !ENV '${X11APPJAIL_USERDIR} /media'
+build-arguments:
+  - is_public_vm: '1'
+  - exclude_ports: '5900'
+template:
+  loader: 'uefi'
+  cpu: !ENV '${WINVM_CPU}'
+  memory: !ENV '${WINVM_MEM}'
+  sound: 'yes'
+  graphics: 'yes'
+  graphics_listen: '0.0.0.0'
+  graphics_res: !ENV '${WINVM_RES}'
+  graphics_wait: 'no'
+  xhci_mouse: 'yes'
+  network0_type: 'virtio-net'
+  network0_switch: 'public'
+  network0_mac: !ENV '${WINVM_MACADDR}'
+  utctime: 'NO'
+  wired_memory: 'YES'
+  uefi_vars: 'YES'
+  debug: 'YES'
+  disk1_type: 'nvme'
+  disk1_dev: 'custom'
+  disk1_name: '/media/data.img'
+  #disk2_type: 'ahci-cd'
+  #disk2_dev: 'custom'
+  #disk2_name: '/vm/.iso/virtio-win.iso'
+  virt_console0: 'org.qemu.guest_agent.0'
+diskLayout:
+  driver: 'nvme'
+  size: !ENV '${WINVM_STORAGE}'
+  from:
+    type: 'iso'
+    isoFile: !ENV '${WINVM_ISOFILE}'
