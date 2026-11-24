@@ -601,14 +601,15 @@ The only problem is that the `D:` drive might not be formatted. To avoid having 
 
 | Name | Description |
 | --- | --- |
-| `<appname>:<profile>.dbus-system` | Configure the system bus mode. There are three modes:<br><br>1. `filter`: Enables filtering.<br>2. `unfiltered`: Disables filtering. This mode is insecure and is recommended only for development.<br>3. `none`: Completely disables the session bus. This is the default mode unless explicitly stated otherwise.<br>|
-| `<appname>:<profile>.dbus-system.<policy>.*` | Apply a policy or rule to the system bus, where `<type>` can be `own`, `call`, `talk`, `see`, and `broadcast`. See `xdg-dbus-proxy(1)` for details.|
-| `<appname>:<profile>.dbus-user` | Configure the session bus mode. There are three modes:<br><br>1. `filter`: Enables filtering. This is the default mode unless explicitly stated otherwise.<br>2. `unfiltered`: Disables filtering. This mode is insecure and is recommended only for development.<br>3. `none`: Completely disables the session bus.<br>|
-| `<appname>:<profile>.dbus-user.<policy>.*` | Apply a policy or rule to the session bus, where `<type>` can be `own`, `call`, `talk`, `see`, and `broadcast`. See `xdg-dbus-proxy(1)` for details.|
-| `<appname>:<profile>.dpi` | Sets the resolution for all screens, in dots per inch. By default, no DPI is set.|
-| `<appname>:<profile>.env.<label>.*` | User-defined custom environment variables. `<label>` is an arbitrary name, as it is not part of the environment. The value of the attribute will be the environment variable with its value in the format `<name>=<value>`.|
-| `<appname>:<profile>.jail.ephemeral` | Mark the jail as ephemeral. See `ephemeral` option in `appjail-quick(1)` for details.<br><br>Although the jail may be destroyed, its data is preserved in the user directory (see `${X11APPJAIL_USERDIR}` in `x11appjail-spec(5)`).<br>|
-| `<appname>:<profile>.screen` | Screen size. If this is not set, allow the window to be resized.|
+| `<appspec>.dbus-system` | Configure the system bus mode. There are three modes:<br><br>1. `filter`: Enables filtering.<br>2. `unfiltered`: Disables filtering. This mode is insecure and is recommended only for development.<br>3. `none`: Completely disables the session bus. This is the default mode unless explicitly stated otherwise.<br>|
+| `<appspec>.dbus-system.<policy>.*` | Apply a policy or rule to the system bus, where `<type>` can be `own`, `call`, `talk`, `see`, and `broadcast`. See `xdg-dbus-proxy(1)` for details.|
+| `<appspec>.dbus-user` | Configure the session bus mode. There are three modes:<br><br>1. `filter`: Enables filtering. This is the default mode unless explicitly stated otherwise.<br>2. `unfiltered`: Disables filtering. This mode is insecure and is recommended only for development.<br>3. `none`: Completely disables the session bus.<br>|
+| `<appspec>.dbus-user.<policy>.*` | Apply a policy or rule to the session bus, where `<type>` can be `own`, `call`, `talk`, `see`, and `broadcast`. See `xdg-dbus-proxy(1)` for details.|
+| `<appspec>.dpi` | Sets the resolution for all screens, in dots per inch. By default, no DPI is set.|
+| `<appspec>.env.<label>.*` | User-defined custom environment variables. `<label>` is an arbitrary name, as it is not part of the environment. The value of the attribute will be the environment variable with its value in the format `<name>=<value>`.|
+| `<appspec>.jail.ephemeral` | Mark the jail as ephemeral. See `ephemeral` option in `appjail-quick(1)` for details.<br><br>Although the jail may be destroyed, its data is preserved in the user directory (see `${X11APPJAIL_USERDIR}` in `x11appjail-spec(5)`).<br>|
+| `<appspec>.nofullscreen` | Prevents devilspie2 from setting windows to full screen when they can be maximized.|
+| `<appspec>.screen` | Screen size. If this is not set, allow the window to be resized.|
 
 #### System Attributes
 
@@ -617,7 +618,7 @@ The only problem is that the `D:` drive might not be formatted. To avoid having 
 | `<appspec>.autounattend` | Path to the `autounattend.xml` file for installing Windows in unattended mode.|
 | `<appspec>.cpu` | Number of CPUs to be used for this virtual machine.|
 | `<appspec>.isofile` | ISO filename containing the Windows operating system.|
-| `<appname>:<profile>.labels` | A space-separated list of label names.|
+| `<appspec>.labels` | A space-separated list of label names.|
 | `<appspec>.macaddr` | This option allows you to specify a mac address to use for this interface. Default is `58:9c:fc:00:00:01`.|
 | `<appspec>.mem` | The amount of memory to assign to the guest.|
 | `oci.from` | Location of OCI image.|
@@ -625,10 +626,10 @@ The only problem is that the `D:` drive might not be formatted. To avoid having 
 | `oci.tag` | OCI image tag.|
 | `overlord.label` | A label that matches the local instance of Overlord.|
 | `overlord.port` | The port on which the local Overlord instance is listening. Default is `8888`.|
-| `<appname>:<profile>.labels.<label>` | The value of the label.|
-| `<appname>:<profile>.oci.from` | Same as `oci.from`, but by application. It takes precedence when defined.|
-| `<appname>:<profile>.oci.pull-policy` | Same as `oci.pull-policy`, but by application. It takes precedence when defined.|
-| `<appname>:<profile>.oci.tag` | Same as `oci.tag`, but by application. It takes precedence when defined.|
+| `<appspec>.labels.<label>` | The value of the label.|
+| `<appspec>.oci.from` | Same as `oci.from`, but by application. It takes precedence when defined.|
+| `<appspec>.oci.pull-policy` | Same as `oci.pull-policy`, but by application. It takes precedence when defined.|
+| `<appspec>.oci.tag` | Same as `oci.tag`, but by application. It takes precedence when defined.|
 | `<appspec>.private.storage` | Storage size of the secondary disk. Default is `10G`.<br><br>Please note that if this disk file does not exist, it will be created, but this only happens once. This AppJail will not change the disk size, so you must use `truncate(1)` to do so at your own risk.<br>|
 | `<appspec>.res` | Specify the resolution of the graphical console in WxH format. Only a certain range of resolutions are currently supported (see `graphics_res` in [`config.sample`](https://github.com/freebsd/vm-bhyve/blob/master/sample-templates/config.sample)). Default is `1024x768`.|
 | `<appspec>.root.storage` | Storage size of the primary disk. Default is `30G`.|
