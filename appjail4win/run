@@ -68,13 +68,16 @@ __winvm_root_storage="30G"
 __winvm_private_storage="10G"
 __winvm_template="${X11APPJAIL_WORKDIR}/app.yml"
 __winvm_overlord_port="8888"
-__winvm_datastore="/var/cache/x11appjail/appjail4win/iso"
+__winvm_appjail4win="/var/cache/x11appjail/appjail4win"
+__winvm_datastore=
 __winvm_userdata="${X11APPJAIL_USERDIR}/data.img"
 __winvm_cpu="2"
 __winvm_mem="2G"
 __winvm_res="800x600"
 __winvm_macaddr="58:9c:fc:00:00:01"
 __winvm_autounattend=
+__winvm_isofile=
+__winvm_imgfile=
 
 if ! x11appjail sys-attr check "overlord.label"; then
     err "overlord.label: no matching label has been specified."
@@ -83,11 +86,25 @@ else
     __winvm_label=`x11appjail sys-attr cat "overlord.label"` || exit 1
 fi
 
-if ! x11appjail sys-attr check "${APPSPEC}.isofile"; then
-    err "${APPSPEC}.isofile: no ISO file has been specified."
+if x11appjail sys-attr check "${APPSPEC}.imgfile" && x11appjail sys-attr check "${APPSPEC}.autounattend"; then
+    err "${APPSPEC}.imgfile and ${APPSPEC}.autounattend are mutually exclusive."
     exit 1
-else
+elif x11appjail sys-attr check "${APPSPEC}.imgfile" && x11appjail sys-attr check "${APPSPEC}.isofile"; then
+    err "${APPSPEC}.imgfile and ${APPSPEC}.isofile are mutually exclusive."
+    exit 1
+fi
+
+if ! x11appjail sys-attr check "${APPSPEC}.isofile" && ! x11appjail sys-attr check "${APPSPEC}.imgfile"; then
+    err "${APPSPEC}: no ISO or IMG file has been specified."
+    exit 1
+elif x11appjail sys-attr check "${APPSPEC}.isofile"; then
     __winvm_isofile=`x11appjail sys-attr cat "${APPSPEC}.isofile"` || exit 1
+    __winvm_datastore="${__winvm_appjail4win}/iso"
+elif x11appjail sys-attr check "${APPSPEC}.imgfile"; then
+    __winvm_imgfile=`x11appjail sys-attr cat "${APPSPEC}.imgfile"` || exit 1
+    __winvm_datastore="${__winvm_appjail4win}/img"
+else
+    exit 1
 fi
 
 if x11appjail sys-attr check "${APPSPEC}.autounattend"; then
@@ -200,6 +217,7 @@ fi
             WINVM_MACADDR="${__winvm_macaddr}" \
             WINVM_STORAGE="${__winvm_root_storage}" \
             WINVM_ISOFILE="${__winvm_isofile}" \
+            WINVM_IMGFILE="${__winvm_imgfile}" \
                 overlord apply -f "${__winvm_template}" || exit 1
 
         __winvm_network_ip4=

@@ -11,6 +11,14 @@ makejail: 'gh+AppJail-makejails/vm'
 options:
   - fstab: !ENV '${WINVM_DATASTORE} /vm/.iso nullfs ro'
   - fstab: !ENV '${X11APPJAIL_USERDIR} /media'
+  #
+  # Configure the bridge with a static MAC address to prevent Windows
+  # from naming the network "Network 2," "Network 3," etc., after
+  # restarting the jail (since the bridge is created at system startup).
+  #
+  # Note that `sysrc` is available in AppJail >5.9.2.
+  #
+  - sysrc: 'create_args_bridge0=ether 02:00:00:00:00:01'
 build-arguments:
   - is_public_vm: '1'
   - exclude_ports: '5900'
